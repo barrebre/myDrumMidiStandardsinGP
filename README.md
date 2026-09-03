@@ -6,7 +6,8 @@ untouched — only `note_on`/`note_off` note numbers are rewritten.
 
 ## How it works
 
-Each note number goes through two lookup tables, applied in order:
+Each note number is checked against the configured Guitar Pro lines and, when
+present, goes through two lookup tables, applied in order:
 
 1. **`defaultNoteConversion`** — converts an original note number to a
    replacement note number (e.g. GP renders note 38 somewhere you don't
@@ -15,15 +16,15 @@ Each note number goes through two lookup tables, applied in order:
    to whatever note number actually lands on the expected line in Guitar
    Pro.
 
-If a note has no entry in `defaultNoteConversion`, it is left completely
-unchanged and counted as **unmatched**. If it does have a conversion entry
-but no follow-up entry in `defaultNoteMapping`, the converted value is kept
-as-is. The file's tracks are each processed independently, so multi-track
-MIDI files keep their track structure intact.
+Notes listed in `defaultNoteMapping` are matched even when no conversion is
+needed. Notes absent from both tables are left unchanged and counted as
+**unmatched**. `defaultNoteTypes` supplies names in the summary when known.
+The file's tracks are each processed independently, so multi-track MIDI files
+keep their track structure intact.
 
-Built-in defaults live in `gp_midi_remap/defaults/defaultNoteConversion.json`
-and `gp_midi_remap/defaults/defaultNoteMapping.json` (both start as `{}` —
-add your own note-number pairs as you discover the standards you want).
+Built-in defaults live in `gp_midi_remap/defaults/`. Conversion files use the
+`notes` array format, mapping files use the `lines`/`noteNumbers` format, and
+note types use the `notes` object format.
 You can also supply your own override files on the command line; entries in
 your file take precedence over the defaults, and any default entries your
 file doesn't mention are still applied.

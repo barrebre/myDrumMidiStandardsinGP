@@ -28,6 +28,7 @@ class RemapSummary:
     changed: dict[tuple[int, int], int] = field(default_factory=dict)
     unchanged: dict[tuple[int, int], int] = field(default_factory=dict)
     unmatched: dict[int, int] = field(default_factory=dict)
+    note_types: dict[int, str] = field(default_factory=dict)
 
     def record(self, original: int, final: int, status: str) -> None:
         if status == UNMATCHED:
@@ -49,6 +50,10 @@ class RemapSummary:
         return sum(self.unmatched.values())
 
     def format_report(self) -> str:
+        def label(note: int) -> str:
+            name = self.note_types.get(note)
+            return f"{note} ({name})" if name else str(note)
+
         lines: list[str] = []
         lines.append(
             f"Summary: {self.total_changed()} changed, "
@@ -59,17 +64,17 @@ class RemapSummary:
         if self.changed:
             lines.append("Changed (original -> final: count):")
             for (original, final), count in sorted(self.changed.items()):
-                lines.append(f"  {original} -> {final}: {count}")
+                lines.append(f"  {label(original)} -> {label(final)}: {count}")
 
         if self.unchanged:
             lines.append("Unchanged (note: count):")
             for (original, final), count in sorted(self.unchanged.items()):
-                lines.append(f"  {original}: {count}")
+                lines.append(f"  {label(original)}: {count}")
 
         if self.unmatched:
             lines.append("Unmatched (no conversion entry) (note: count):")
             for original, count in sorted(self.unmatched.items()):
-                lines.append(f"  {original}: {count}")
+                lines.append(f"  {label(original)}: {count}")
 
         return "\n".join(lines)
 
@@ -85,18 +90,16 @@ def resolve_note(original: int, tables: NoteTables) -> tuple[int, str]:
       converted value as-is. Status is CHANGED if the final value differs
       from the original, else UNCHANGED.
     """
-    if original not in tables.note_conversion:
+    if original not in tables.note_conversion and original not in tables.note_mapping:
         return original, UNMATCHED
 
-    converted = tables.note_conversion[original]
+    converted = tables.note_conversion.get(original, original)
     final = tables.note_mapping.get(converted, converted)
     status = CHANGED if final != original else UNCHANGED
     return final, status
 
 
-def remap_midi_file(
-    input_path: str, output_path: str, tables: NoteTables
-) -> RemapSummary:
+def remap_midi_file(input_path: str, output_path: str, tables: NoteTables) -> RemapSummary:
     """Read a MIDI file, remap note numbers per track, write the result.
 
     All non-note events (timing/delta times, channel, velocity, control
@@ -104,7 +107,7 @@ def remap_midi_file(
     exactly. Each track is processed independently.
     """
     midi_file = mido.MidiFile(input_path)
-    summary = RemapSummary()
+    summary = RemapSummary(note_types=tables.note_types)
 
     for track in midi_file.tracks:
         for msg in track:
