@@ -14,10 +14,16 @@ from gp_midi_remap.transform import (
 
 
 def test_resolve_note_no_conversion_entry_is_unmatched():
-    tables = NoteTables(note_conversion={}, note_mapping={38: 99})
+    tables = NoteTables(note_conversion={}, note_mapping={})
     final, status = resolve_note(38, tables)
     assert final == 38
     assert status == UNMATCHED
+
+
+def test_resolve_note_in_mapping_without_conversion_is_unchanged():
+    tables = NoteTables(note_conversion={}, note_mapping={38: 38})
+    final, status = resolve_note(38, tables)
+    assert (final, status) == (38, UNCHANGED)
 
 
 def test_resolve_note_conversion_only():
@@ -61,6 +67,12 @@ def test_summary_report_counts():
     report = summary.format_report()
     assert "2 changed, 1 unchanged, 1 unmatched" in report
     assert "38 -> 40: 2" in report
+
+
+def test_summary_report_includes_note_names():
+    summary = RemapSummary(note_types={38: "snare", 40: "tom"})
+    summary.record(38, 40, CHANGED)
+    assert "38 (snare) -> 40 (tom): 1" in summary.format_report()
 
 
 def build_multi_track_midi(path):

@@ -14,8 +14,21 @@ def write_json(path, data):
 
 def test_defaults_only_load_empty_tables():
     tables = load_note_tables()
-    assert tables.note_conversion == {}
-    assert tables.note_mapping == {}
+    assert tables.note_conversion == {80: 97, 42: 46}
+    assert 36 in tables.note_mapping
+    assert tables.note_types[36] == "kick"
+
+
+def test_current_wrapped_user_files_are_supported(tmp_path):
+    conversion_file = write_json(
+        tmp_path / "conv.json",
+        {"notes": [{"originalNote": 80, "replacementNote": 97}]},
+    )
+    mapping_file = write_json(tmp_path / "map.json", {"lines": [{"noteNumbers": [36, 35]}]})
+    tables = load_note_tables(conversion_file, mapping_file)
+    assert tables.note_conversion[80] == 97
+    assert tables.note_mapping[36] == 36
+    assert tables.note_mapping[35] == 35
 
 
 def test_user_override_merges_over_defaults(tmp_path):
@@ -26,8 +39,9 @@ def test_user_override_merges_over_defaults(tmp_path):
         note_conversion_path=conversion_file, note_mapping_path=mapping_file
     )
 
-    assert tables.note_conversion == {38: 40, 42: 22}
-    assert tables.note_mapping == {40: 41}
+    assert tables.note_conversion[38] == 40
+    assert tables.note_conversion[42] == 22
+    assert tables.note_mapping[40] == 41
 
 
 def test_user_file_keys_win_over_defaults(tmp_path, monkeypatch):

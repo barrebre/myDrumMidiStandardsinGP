@@ -1,1 +1,6 @@
-{}
+{
+    "notes": [
+        {"originalNote": 80, "replacementNote": 97},
+        {"originalNote": 42, "replacementNote": 46}
+    ]
+}

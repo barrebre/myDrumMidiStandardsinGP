@@ -1,21 +1,4 @@
-"""Config loading, validation, and merge-precedence logic.
-
-Two note-number tables are used:
-
-* ``note_conversion`` -- maps an original MIDI note number to a replacement
-  note number (e.g. GP renders note 38 in a spot the user dislikes, so it's
-  converted to another note number first).
-* ``note_mapping`` -- maps a (possibly already-converted) note number to the
-  note number that lands on the expected line/position in Guitar Pro.
-
-Both tables are simple ``{note: note}`` JSON objects with integer keys
-(as strings, since JSON object keys are always strings) and integer values,
-each in the valid MIDI note range 0-127.
-
-Resolution order: built-in defaults are loaded first, then an optional
-user-supplied file is merged on top (user keys win on conflict, but do not
-remove default keys that the user's file doesn't mention).
-"""
+"""Config loading, validation, and merge-precedence logic."""
 
 from __future__ import annotations
 
@@ -26,43 +9,28 @@ from pathlib import Path
 
 MIDI_NOTE_MIN = 0
 MIDI_NOTE_MAX = 127
-
 _DEFAULTS_PACKAGE = "gp_midi_remap.defaults"
-_DEFAULT_NOTE_CONVERSION_FILE = "defaultNoteConversion.json"
-_DEFAULT_NOTE_MAPPING_FILE = "defaultNoteMapping.json"
 
 
 class ConfigError(Exception):
-    """Raised when one or more config files fail validation.
-
-    Carries every detected problem (not just the first) so users can fix
-    everything in one edit cycle.
-    """
-
     def __init__(self, errors: list[str]):
         self.errors = errors
         super().__init__("\n".join(errors))
 
-    def __str__(self) -> str:  # pragma: no cover - trivial
-        return "\n".join(self.errors)
-
 
 @dataclass
 class NoteTables:
-    """Fully resolved, validated note-number lookup tables."""
-
     note_conversion: dict[int, int] = field(default_factory=dict)
     note_mapping: dict[int, int] = field(default_factory=dict)
+    note_types: dict[int, str] = field(default_factory=dict)
 
 
-def _load_default_json(filename: str) -> dict:
-    with resources.files(_DEFAULTS_PACKAGE).joinpath(filename).open(
-        "r", encoding="utf-8"
-    ) as fh:
+def _load_default_json(filename: str) -> object:
+    with resources.files(_DEFAULTS_PACKAGE).joinpath(filename).open("r", encoding="utf-8") as fh:
         return json.load(fh)
 
 
-def _read_json_file(path: Path, errors: list[str]) -> dict | None:
+def _read_json_file(path: Path, errors: list[str]) -> object | None:
     if not path.exists():
         errors.append(f"{path}: file not found")
         return None
@@ -70,103 +38,101 @@ def _read_json_file(path: Path, errors: list[str]) -> dict | None:
         errors.append(f"{path}: not a file")
         return None
     try:
-        text = path.read_text(encoding="utf-8")
+        return json.loads(path.read_text(encoding="utf-8"))
     except OSError as exc:
         errors.append(f"{path}: could not read file ({exc})")
-        return None
-    try:
-        data = json.loads(text)
     except json.JSONDecodeError as exc:
         errors.append(f"{path}: invalid JSON ({exc.msg} at line {exc.lineno}, column {exc.colno})")
-        return None
-    return data
+    return None
 
 
-def _validate_note_table(
-    data: object, source: str, errors: list[str]
-) -> dict[int, int]:
-    """Validate a raw parsed JSON object as a note->note table.
-
-    Collects every problem found rather than stopping at the first one.
-    Returns the successfully-parsed entries; invalid entries are skipped.
-    """
+def _validate_note_table(data: object, source: str, errors: list[str]) -> dict[int, int]:
     result: dict[int, int] = {}
-
     if not isinstance(data, dict):
-        errors.append(
-            f"{source}: expected a JSON object mapping note numbers to note "
-            f"numbers, got {type(data).__name__}"
-        )
+        errors.append(f"{source}: expected a JSON object mapping note numbers to note numbers, got {type(data).__name__}")
         return result
-
     for raw_key, raw_value in data.items():
         try:
             key = int(raw_key)
         except (TypeError, ValueError):
             errors.append(f"{source}: key {raw_key!r} is not an integer note number")
             continue
-
         if not isinstance(raw_value, int) or isinstance(raw_value, bool):
-            errors.append(
-                f"{source}: value for note {raw_key!r} must be an integer, "
-                f"got {raw_value!r}"
-            )
+            errors.append(f"{source}: value for note {raw_key!r} must be an integer, got {raw_value!r}")
             continue
-
-        if not (MIDI_NOTE_MIN <= key <= MIDI_NOTE_MAX):
-            errors.append(
-                f"{source}: key {raw_key!r} is out of MIDI note range "
-                f"({MIDI_NOTE_MIN}-{MIDI_NOTE_MAX})"
-            )
+        if not MIDI_NOTE_MIN <= key <= MIDI_NOTE_MAX or not MIDI_NOTE_MIN <= raw_value <= MIDI_NOTE_MAX:
+            errors.append(f"{source}: note mapping {key}->{raw_value} is out of MIDI note range (0-127)")
             continue
-
-        if not (MIDI_NOTE_MIN <= raw_value <= MIDI_NOTE_MAX):
-            errors.append(
-                f"{source}: value {raw_value!r} for note {key} is out of MIDI "
-                f"note range ({MIDI_NOTE_MIN}-{MIDI_NOTE_MAX})"
-            )
-            continue
-
         result[key] = raw_value
-
     return result
 
 
-def load_note_tables(
-    note_conversion_path: Path | None = None,
-    note_mapping_path: Path | None = None,
-) -> NoteTables:
-    """Load and validate note tables, merging user overrides over defaults.
+def _validate_conversion(data: object, source: str, errors: list[str]) -> dict[int, int]:
+    if not isinstance(data, dict) or "notes" not in data:
+        return _validate_note_table(data, source, errors)
+    entries = data["notes"]
+    if not isinstance(entries, list):
+        errors.append(f"{source}.notes: expected an array")
+        return {}
+    result: dict[int, int] = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or "originalNote" not in entry or "replacementNote" not in entry:
+            errors.append(f"{source}.notes: each entry needs originalNote and replacementNote")
+            continue
+        result.update(_validate_note_table({entry["originalNote"]: entry["replacementNote"]}, source, errors))
+    return result
 
-    Raises ConfigError (with every problem found) if any file is invalid.
-    """
+
+def _validate_mapping(data: object, source: str, errors: list[str]) -> dict[int, int]:
+    if not isinstance(data, dict) or "lines" not in data:
+        return _validate_note_table(data, source, errors)
+    lines = data["lines"]
+    if not isinstance(lines, list):
+        errors.append(f"{source}.lines: expected an array")
+        return {}
+    result: dict[int, int] = {}
+    for line in lines:
+        if not isinstance(line, dict) or not isinstance(line.get("noteNumbers"), list):
+            errors.append(f"{source}.lines: each entry needs a noteNumbers array")
+            continue
+        for note in line["noteNumbers"]:
+            result.update(_validate_note_table({note: note}, source, errors))
+    return result
+
+
+def _validate_note_types(data: object, source: str, errors: list[str]) -> dict[int, str]:
+    if not isinstance(data, dict) or not isinstance(data.get("notes"), dict):
+        errors.append(f"{source}: expected an object with a notes object")
+        return {}
+    result: dict[int, str] = {}
+    for raw_key, value in data["notes"].items():
+        try:
+            key = int(raw_key)
+        except (TypeError, ValueError):
+            errors.append(f"{source}: key {raw_key!r} is not an integer note number")
+            continue
+        if not MIDI_NOTE_MIN <= key <= MIDI_NOTE_MAX:
+            errors.append(f"{source}: key {raw_key!r} is out of MIDI note range (0-127)")
+        elif not isinstance(value, str):
+            errors.append(f"{source}: value for note {raw_key!r} must be a string")
+        else:
+            result[key] = value
+    return result
+
+
+def load_note_tables(note_conversion_path: Path | None = None, note_mapping_path: Path | None = None) -> NoteTables:
     errors: list[str] = []
-
-    default_conversion_raw = _load_default_json(_DEFAULT_NOTE_CONVERSION_FILE)
-    default_mapping_raw = _load_default_json(_DEFAULT_NOTE_MAPPING_FILE)
-
-    conversion = _validate_note_table(
-        default_conversion_raw, "built-in defaultNoteConversion", errors
-    )
-    mapping = _validate_note_table(
-        default_mapping_raw, "built-in defaultNoteMapping", errors
-    )
-
+    conversion = _validate_conversion(_load_default_json("defaultNoteConversion.json"), "built-in defaultNoteConversion", errors)
+    mapping = _validate_mapping(_load_default_json("defaultNoteMapping.json"), "built-in defaultNoteMapping", errors)
+    note_types = _validate_note_types(_load_default_json("defaultNoteTypes.json"), "built-in defaultNoteTypes", errors)
     if note_conversion_path is not None:
         raw = _read_json_file(note_conversion_path, errors)
         if raw is not None:
-            conversion.update(
-                _validate_note_table(raw, str(note_conversion_path), errors)
-            )
-
+            conversion.update(_validate_conversion(raw, str(note_conversion_path), errors))
     if note_mapping_path is not None:
         raw = _read_json_file(note_mapping_path, errors)
         if raw is not None:
-            mapping.update(
-                _validate_note_table(raw, str(note_mapping_path), errors)
-            )
-
+            mapping.update(_validate_mapping(raw, str(note_mapping_path), errors))
     if errors:
         raise ConfigError(errors)
-
-    return NoteTables(note_conversion=conversion, note_mapping=mapping)
+    return NoteTables(conversion, mapping, note_types)
