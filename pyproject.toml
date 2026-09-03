@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gp-midi-remap"
+version = "0.1.0"
+description = "Remap MIDI drum note numbers for consistent Guitar Pro imports"
+requires-python = ">=3.9"
+dependencies = [
+    "mido>=1.3",
+]
+
+[project.scripts]
+gp-midi-remap = "gp_midi_remap.cli:main"
+
+[tool.setuptools]
+packages = ["gp_midi_remap"]
+
+[tool.setuptools.package-data]
+gp_midi_remap = ["defaults/*.json"]
