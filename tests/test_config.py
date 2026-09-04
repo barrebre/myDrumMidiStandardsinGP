@@ -64,7 +64,12 @@ def test_defaults_only_load_empty_tables(temp_defaults_dir, monkeypatch):
     assert tables.note_types[36] == "kick"
 
 
-def test_current_wrapped_user_files_are_supported(tmp_path):
+def test_current_wrapped_user_files_are_supported(temp_defaults_dir, tmp_path, monkeypatch):
+    """User-provided wrapped format files merge over defaults."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
     conversion_file = write_json(
         tmp_path / "conv.json",
         {"notes": [{"originalNote": 80, "replacementNote": 97}]},
@@ -76,7 +81,12 @@ def test_current_wrapped_user_files_are_supported(tmp_path):
     assert tables.note_mapping[35] == 35
 
 
-def test_user_override_merges_over_defaults(tmp_path):
+def test_user_override_merges_over_defaults(temp_defaults_dir, tmp_path, monkeypatch):
+    """User files override defaults (merge precedence)."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
     conversion_file = write_json(tmp_path / "conv.json", {"38": 40, "42": 22})
     mapping_file = write_json(tmp_path / "map.json", {"40": 41})
 
@@ -85,18 +95,19 @@ def test_user_override_merges_over_defaults(tmp_path):
     )
 
     assert tables.note_conversion[38] == 40
-    assert tables.note_conversion[42] == 22
+    assert tables.note_conversion[42] == 22  # User value wins
     assert tables.note_mapping[40] == 41
 
 
-def test_user_file_keys_win_over_defaults(tmp_path, monkeypatch):
-    # Simulate a non-empty default by loading a user file twice: once as if
-    # it were the "default" via direct table validation isn't exposed, so
-    # instead verify override semantics using two successive loads sharing
-    # the same conversion file content but different values.
+def test_user_file_keys_win_over_defaults(temp_defaults_dir, tmp_path, monkeypatch):
+    """User file values win over defaults for the same key."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
     conversion_file = write_json(tmp_path / "conv.json", {"38": 99})
     tables = load_note_tables(note_conversion_path=conversion_file)
-    assert tables.note_conversion[38] == 99
+    assert tables.note_conversion[38] == 99  # User wins, not default
 
 
 def test_invalid_json_reports_error(tmp_path):
