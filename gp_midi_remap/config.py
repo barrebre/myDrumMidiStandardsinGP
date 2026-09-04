@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
@@ -10,6 +11,30 @@ from pathlib import Path
 MIDI_NOTE_MIN = 0
 MIDI_NOTE_MAX = 127
 _DEFAULTS_PACKAGE = "gp_midi_remap.defaults"
+
+
+def _resolve_defaults_dir() -> Path:
+    """Resolve the directory containing default JSON files.
+    
+    For frozen executables (PyInstaller, cx_Freeze), use the executable's parent directory.
+    For normal Python invocations, use the package's defaults directory.
+    
+    Returns:
+        Path to the directory containing defaultNoteConversion.json,
+        defaultNoteMapping.json, and defaultNoteTypes.json.
+    """
+    # Check if running as a frozen executable
+    if getattr(sys, 'frozen', False):
+        # Frozen: executable is at sys.executable, defaults beside it
+        return Path(sys.executable).parent
+    
+    # Normal Python: use package defaults directory
+    # resources.files() returns a Traversable; convert to Path
+    try:
+        return Path(resources.files(_DEFAULTS_PACKAGE))
+    except (TypeError, AttributeError):
+        # Fallback: construct path relative to this module
+        return Path(__file__).parent / "defaults"
 
 
 class ConfigError(Exception):
