@@ -1,6 +1,7 @@
 """Tests for gp_midi_remap.config: parsing, validation, merge precedence."""
 
 import json
+import sys
 
 import pytest
 
@@ -12,14 +13,63 @@ def write_json(path, data):
     return path
 
 
-def test_defaults_only_load_empty_tables():
+@pytest.fixture
+def temp_defaults_dir(tmp_path):
+    """Create temporary default JSON files in a temp directory.
+    
+    Returns the directory path. Files are populated with the current defaults.
+    """
+    defaults = {
+        "defaultNoteConversion.json": {"notes": [{"originalNote": 80, "replacementNote": 97}, {"originalNote": 42, "replacementNote": 46}]},
+        "defaultNoteMapping.json": {"lines": [{"noteNumbers": [36, 35]}, {"noteNumbers": [38]}, {"noteNumbers": [45, 43]}, {"noteNumbers": [48, 47]}, {"noteNumbers": [46, 51, 53]}, {"noteNumbers": [49, 57, 97]}]},
+        "defaultNoteTypes.json": {"notes": {"36": "kick", "38": "snare", "42": "closed hi-hat", "46": "open hi-hat", "49": "high crash", "51": "ride", "52": "china", "53": "ride bell", "57": "low crash", "97": "crash pinch"}},
+    }
+    for filename, data in defaults.items():
+        write_json(tmp_path / filename, data)
+    return tmp_path
+
+
+@pytest.fixture
+def mock_frozen_executable(tmp_path, monkeypatch):
+    """Mock sys.frozen to simulate PyInstaller frozen executable.
+    
+    Yields a tuple (mock_sys, defaults_dir) where you can set sys.executable.
+    """
+    defaults = {
+        "defaultNoteConversion.json": {"notes": [{"originalNote": 80, "replacementNote": 97}]},
+        "defaultNoteMapping.json": {"lines": [{"noteNumbers": [36]}]},
+        "defaultNoteTypes.json": {"notes": {"36": "kick"}},
+    }
+    for filename, data in defaults.items():
+        write_json(tmp_path / filename, data)
+    
+    fake_exe = tmp_path / "my_app"
+    fake_exe.write_text("fake executable")
+    
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
+    monkeypatch.setattr(sys, 'executable', str(fake_exe))
+    return tmp_path
+
+
+def test_defaults_only_load_empty_tables(temp_defaults_dir, monkeypatch):
+    """Defaults load from external directory, not embedded."""
+    # Mock _resolve_defaults_dir to return our temp directory
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
     tables = load_note_tables()
     assert tables.note_conversion == {80: 97, 42: 46}
     assert 36 in tables.note_mapping
     assert tables.note_types[36] == "kick"
 
 
-def test_current_wrapped_user_files_are_supported(tmp_path):
+def test_current_wrapped_user_files_are_supported(temp_defaults_dir, tmp_path, monkeypatch):
+    """User-provided wrapped format files merge over defaults."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
     conversion_file = write_json(
         tmp_path / "conv.json",
         {"notes": [{"originalNote": 80, "replacementNote": 97}]},
@@ -31,7 +81,12 @@ def test_current_wrapped_user_files_are_supported(tmp_path):
     assert tables.note_mapping[35] == 35
 
 
-def test_user_override_merges_over_defaults(tmp_path):
+def test_user_override_merges_over_defaults(temp_defaults_dir, tmp_path, monkeypatch):
+    """User files override defaults (merge precedence)."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
     conversion_file = write_json(tmp_path / "conv.json", {"38": 40, "42": 22})
     mapping_file = write_json(tmp_path / "map.json", {"40": 41})
 
@@ -40,18 +95,19 @@ def test_user_override_merges_over_defaults(tmp_path):
     )
 
     assert tables.note_conversion[38] == 40
-    assert tables.note_conversion[42] == 22
+    assert tables.note_conversion[42] == 22  # User value wins
     assert tables.note_mapping[40] == 41
 
 
-def test_user_file_keys_win_over_defaults(tmp_path, monkeypatch):
-    # Simulate a non-empty default by loading a user file twice: once as if
-    # it were the "default" via direct table validation isn't exposed, so
-    # instead verify override semantics using two successive loads sharing
-    # the same conversion file content but different values.
+def test_user_file_keys_win_over_defaults(temp_defaults_dir, tmp_path, monkeypatch):
+    """User file values win over defaults for the same key."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
     conversion_file = write_json(tmp_path / "conv.json", {"38": 99})
     tables = load_note_tables(note_conversion_path=conversion_file)
-    assert tables.note_conversion[38] == 99
+    assert tables.note_conversion[38] == 99  # User wins, not default
 
 
 def test_invalid_json_reports_error(tmp_path):
@@ -121,3 +177,95 @@ def test_boolean_value_rejected(tmp_path):
     bad_file = write_json(tmp_path / "bad.json", {"38": True})
     with pytest.raises(ConfigError):
         load_note_tables(note_conversion_path=bad_file)
+
+
+def test_defaults_are_reloaded_on_each_call(temp_defaults_dir, monkeypatch):
+    """Each load_note_tables() call reads defaults fresh from disk."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    
+    # First load
+    tables1 = load_note_tables()
+    assert tables1.note_conversion[80] == 97
+    
+    # Modify the default file on disk
+    modified_defaults = {
+        "notes": [{"originalNote": 80, "replacementNote": 100}]  # Changed 97 -> 100
+    }
+    write_json(temp_defaults_dir / "defaultNoteConversion.json", modified_defaults)
+    
+    # Second load should see the updated file
+    tables2 = load_note_tables()
+    assert tables2.note_conversion[80] == 100
+
+
+def test_missing_default_file_raises_config_error(tmp_path, monkeypatch):
+    """Missing default files raise ConfigError with file-not-found message."""
+    # Create an empty temp dir (no default files)
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: empty_dir,
+    )
+    
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables()
+    
+    # Should report all three missing files
+    errors_text = "\n".join(exc_info.value.errors)
+    assert "defaultNoteConversion.json" in errors_text
+    assert "defaultNoteMapping.json" in errors_text
+    assert "defaultNoteTypes.json" in errors_text
+    # Check that at least the file-not-found errors are present
+    file_not_found_errors = [e for e in exc_info.value.errors if "file not found" in e]
+    assert len(file_not_found_errors) == 3
+
+
+def test_invalid_default_json_raises_config_error(temp_defaults_dir, monkeypatch):
+    """Invalid JSON in a default file raises ConfigError with parse error."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    
+    # Corrupt one default file
+    (temp_defaults_dir / "defaultNoteConversion.json").write_text("{not valid json")
+    
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables()
+    
+    # Should report JSON parse error
+    errors_text = "\n".join(exc_info.value.errors)
+    assert "defaultNoteConversion.json" in errors_text
+    assert "invalid JSON" in errors_text
+
+
+def test_resolve_defaults_dir_frozen_uses_executable_dir(mock_frozen_executable, monkeypatch):
+    """When frozen, _resolve_defaults_dir() returns executable's parent directory."""
+    from gp_midi_remap.config import _resolve_defaults_dir
+    
+    result = _resolve_defaults_dir()
+    
+    # Should be the parent of sys.executable (the executable's directory)
+    assert result == mock_frozen_executable
+
+
+def test_resolve_defaults_dir_normal_uses_package_dir(monkeypatch):
+    """When not frozen, _resolve_defaults_dir() returns package defaults directory."""
+    from gp_midi_remap.config import _resolve_defaults_dir
+    
+    # Ensure sys.frozen is False (or not set)
+    monkeypatch.setattr(sys, 'frozen', False, raising=False)
+    
+    result = _resolve_defaults_dir()
+    
+    # Should point to gp_midi_remap/defaults
+    assert result.exists()
+    assert result.name == "defaults"
+    assert (result / "defaultNoteConversion.json").exists()
+    assert (result / "defaultNoteMapping.json").exists()
+    assert (result / "defaultNoteTypes.json").exists()

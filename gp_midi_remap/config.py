@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
@@ -10,6 +11,30 @@ from pathlib import Path
 MIDI_NOTE_MIN = 0
 MIDI_NOTE_MAX = 127
 _DEFAULTS_PACKAGE = "gp_midi_remap.defaults"
+
+
+def _resolve_defaults_dir() -> Path:
+    """Resolve the directory containing default JSON files.
+    
+    For frozen executables (PyInstaller, cx_Freeze), use the executable's parent directory.
+    For normal Python invocations, use the package's defaults directory.
+    
+    Returns:
+        Path to the directory containing defaultNoteConversion.json,
+        defaultNoteMapping.json, and defaultNoteTypes.json.
+    """
+    # Check if running as a frozen executable
+    if getattr(sys, 'frozen', False):
+        # Frozen: executable is at sys.executable, defaults beside it
+        return Path(sys.executable).parent
+    
+    # Normal Python: use package defaults directory
+    # resources.files() returns a Traversable; convert to Path
+    try:
+        return Path(resources.files(_DEFAULTS_PACKAGE))
+    except (TypeError, AttributeError):
+        # Fallback: construct path relative to this module
+        return Path(__file__).parent / "defaults"
 
 
 class ConfigError(Exception):
@@ -25,9 +50,26 @@ class NoteTables:
     note_types: dict[int, str] = field(default_factory=dict)
 
 
-def _load_default_json(filename: str) -> object:
-    with resources.files(_DEFAULTS_PACKAGE).joinpath(filename).open("r", encoding="utf-8") as fh:
-        return json.load(fh)
+def _load_external_json(path: Path, errors: list[str]) -> object | None:
+    """Load JSON from an external file, accumulating errors.
+    
+    Used for both default and user-provided JSON files. Returns the parsed
+    object on success, None on failure. All errors (missing file, read error,
+    JSON parse error) are appended to the errors list for aggregated reporting.
+    """
+    if not path.exists():
+        errors.append(f"{path}: file not found")
+        return None
+    if not path.is_file():
+        errors.append(f"{path}: not a file")
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        errors.append(f"{path}: could not read file ({exc})")
+    except json.JSONDecodeError as exc:
+        errors.append(f"{path}: invalid JSON ({exc.msg} at line {exc.lineno}, column {exc.colno})")
+    return None
 
 
 def _read_json_file(path: Path, errors: list[str]) -> object | None:
@@ -122,9 +164,25 @@ def _validate_note_types(data: object, source: str, errors: list[str]) -> dict[i
 
 def load_note_tables(note_conversion_path: Path | None = None, note_mapping_path: Path | None = None) -> NoteTables:
     errors: list[str] = []
-    conversion = _validate_conversion(_load_default_json("defaultNoteConversion.json"), "built-in defaultNoteConversion", errors)
-    mapping = _validate_mapping(_load_default_json("defaultNoteMapping.json"), "built-in defaultNoteMapping", errors)
-    note_types = _validate_note_types(_load_default_json("defaultNoteTypes.json"), "built-in defaultNoteTypes", errors)
+    # Resolve the directory where default files are located
+    defaults_dir = _resolve_defaults_dir()
+    
+    # Load and validate each default file; accumulate errors
+    conversion = _validate_conversion(
+        _load_external_json(defaults_dir / "defaultNoteConversion.json", errors) or {},
+        f"{defaults_dir / 'defaultNoteConversion.json'}",
+        errors,
+    )
+    mapping = _validate_mapping(
+        _load_external_json(defaults_dir / "defaultNoteMapping.json", errors) or {},
+        f"{defaults_dir / 'defaultNoteMapping.json'}",
+        errors,
+    )
+    note_types = _validate_note_types(
+        _load_external_json(defaults_dir / "defaultNoteTypes.json", errors) or {},
+        f"{defaults_dir / 'defaultNoteTypes.json'}",
+        errors,
+    )
     if note_conversion_path is not None:
         raw = _read_json_file(note_conversion_path, errors)
         if raw is not None:
