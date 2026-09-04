@@ -164,9 +164,25 @@ def _validate_note_types(data: object, source: str, errors: list[str]) -> dict[i
 
 def load_note_tables(note_conversion_path: Path | None = None, note_mapping_path: Path | None = None) -> NoteTables:
     errors: list[str] = []
-    conversion = _validate_conversion(_load_default_json("defaultNoteConversion.json"), "built-in defaultNoteConversion", errors)
-    mapping = _validate_mapping(_load_default_json("defaultNoteMapping.json"), "built-in defaultNoteMapping", errors)
-    note_types = _validate_note_types(_load_default_json("defaultNoteTypes.json"), "built-in defaultNoteTypes", errors)
+    # Resolve the directory where default files are located
+    defaults_dir = _resolve_defaults_dir()
+    
+    # Load and validate each default file; accumulate errors
+    conversion = _validate_conversion(
+        _load_external_json(defaults_dir / "defaultNoteConversion.json", errors) or {},
+        f"{defaults_dir / 'defaultNoteConversion.json'}",
+        errors,
+    )
+    mapping = _validate_mapping(
+        _load_external_json(defaults_dir / "defaultNoteMapping.json", errors) or {},
+        f"{defaults_dir / 'defaultNoteMapping.json'}",
+        errors,
+    )
+    note_types = _validate_note_types(
+        _load_external_json(defaults_dir / "defaultNoteTypes.json", errors) or {},
+        f"{defaults_dir / 'defaultNoteTypes.json'}",
+        errors,
+    )
     if note_conversion_path is not None:
         raw = _read_json_file(note_conversion_path, errors)
         if raw is not None:
