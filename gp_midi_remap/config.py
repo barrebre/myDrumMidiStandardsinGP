@@ -50,9 +50,26 @@ class NoteTables:
     note_types: dict[int, str] = field(default_factory=dict)
 
 
-def _load_default_json(filename: str) -> object:
-    with resources.files(_DEFAULTS_PACKAGE).joinpath(filename).open("r", encoding="utf-8") as fh:
-        return json.load(fh)
+def _load_external_json(path: Path, errors: list[str]) -> object | None:
+    """Load JSON from an external file, accumulating errors.
+    
+    Used for both default and user-provided JSON files. Returns the parsed
+    object on success, None on failure. All errors (missing file, read error,
+    JSON parse error) are appended to the errors list for aggregated reporting.
+    """
+    if not path.exists():
+        errors.append(f"{path}: file not found")
+        return None
+    if not path.is_file():
+        errors.append(f"{path}: not a file")
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        errors.append(f"{path}: could not read file ({exc})")
+    except json.JSONDecodeError as exc:
+        errors.append(f"{path}: invalid JSON ({exc.msg} at line {exc.lineno}, column {exc.colno})")
+    return None
 
 
 def _read_json_file(path: Path, errors: list[str]) -> object | None:
