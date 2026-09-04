@@ -199,3 +199,27 @@ def test_defaults_are_reloaded_on_each_call(temp_defaults_dir, monkeypatch):
     # Second load should see the updated file
     tables2 = load_note_tables()
     assert tables2.note_conversion[80] == 100
+
+
+def test_missing_default_file_raises_config_error(tmp_path, monkeypatch):
+    """Missing default files raise ConfigError with file-not-found message."""
+    # Create an empty temp dir (no default files)
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: empty_dir,
+    )
+    
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables()
+    
+    # Should report all three missing files
+    errors_text = "\n".join(exc_info.value.errors)
+    assert "defaultNoteConversion.json" in errors_text
+    assert "defaultNoteMapping.json" in errors_text
+    assert "defaultNoteTypes.json" in errors_text
+    # Check that at least the file-not-found errors are present
+    file_not_found_errors = [e for e in exc_info.value.errors if "file not found" in e]
+    assert len(file_not_found_errors) == 3
