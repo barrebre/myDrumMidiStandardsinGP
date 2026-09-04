@@ -177,3 +177,25 @@ def test_boolean_value_rejected(tmp_path):
     bad_file = write_json(tmp_path / "bad.json", {"38": True})
     with pytest.raises(ConfigError):
         load_note_tables(note_conversion_path=bad_file)
+
+
+def test_defaults_are_reloaded_on_each_call(temp_defaults_dir, monkeypatch):
+    """Each load_note_tables() call reads defaults fresh from disk."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    
+    # First load
+    tables1 = load_note_tables()
+    assert tables1.note_conversion[80] == 97
+    
+    # Modify the default file on disk
+    modified_defaults = {
+        "notes": [{"originalNote": 80, "replacementNote": 100}]  # Changed 97 -> 100
+    }
+    write_json(temp_defaults_dir / "defaultNoteConversion.json", modified_defaults)
+    
+    # Second load should see the updated file
+    tables2 = load_note_tables()
+    assert tables2.note_conversion[80] == 100
