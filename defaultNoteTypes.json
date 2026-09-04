@@ -2,8 +2,13 @@
     "notes": {
         "36": "kick",
         "38": "snare",
+        "41": "low floor tom",
         "42": "closed hi-hat",
+        "43": "floor tom",
+        "45": "low rack tom",
         "46": "open hi-hat",
+        "47": "mid rack tom",
+        "48": "high rack tom",
         "49": "high crash",
         "51": "ride",
         "52": "china",
