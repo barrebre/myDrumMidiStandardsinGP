@@ -252,3 +252,20 @@ def test_resolve_defaults_dir_frozen_uses_executable_dir(mock_frozen_executable,
     
     # Should be the parent of sys.executable (the executable's directory)
     assert result == mock_frozen_executable
+
+
+def test_resolve_defaults_dir_normal_uses_package_dir(monkeypatch):
+    """When not frozen, _resolve_defaults_dir() returns package defaults directory."""
+    from gp_midi_remap.config import _resolve_defaults_dir
+    
+    # Ensure sys.frozen is False (or not set)
+    monkeypatch.setattr(sys, 'frozen', False, raising=False)
+    
+    result = _resolve_defaults_dir()
+    
+    # Should point to gp_midi_remap/defaults
+    assert result.exists()
+    assert result.name == "defaults"
+    assert (result / "defaultNoteConversion.json").exists()
+    assert (result / "defaultNoteMapping.json").exists()
+    assert (result / "defaultNoteTypes.json").exists()
