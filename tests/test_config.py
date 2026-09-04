@@ -223,3 +223,22 @@ def test_missing_default_file_raises_config_error(tmp_path, monkeypatch):
     # Check that at least the file-not-found errors are present
     file_not_found_errors = [e for e in exc_info.value.errors if "file not found" in e]
     assert len(file_not_found_errors) == 3
+
+
+def test_invalid_default_json_raises_config_error(temp_defaults_dir, monkeypatch):
+    """Invalid JSON in a default file raises ConfigError with parse error."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    
+    # Corrupt one default file
+    (temp_defaults_dir / "defaultNoteConversion.json").write_text("{not valid json")
+    
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables()
+    
+    # Should report JSON parse error
+    errors_text = "\n".join(exc_info.value.errors)
+    assert "defaultNoteConversion.json" in errors_text
+    assert "invalid JSON" in errors_text
