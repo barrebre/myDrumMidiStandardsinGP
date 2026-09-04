@@ -46,7 +46,7 @@ def mock_frozen_executable(tmp_path, monkeypatch):
     fake_exe = tmp_path / "my_app"
     fake_exe.write_text("fake executable")
     
-    monkeypatch.setattr(sys, 'frozen', True)
+    monkeypatch.setattr(sys, 'frozen', True, raising=False)
     monkeypatch.setattr(sys, 'executable', str(fake_exe))
     return tmp_path
 
@@ -242,3 +242,13 @@ def test_invalid_default_json_raises_config_error(temp_defaults_dir, monkeypatch
     errors_text = "\n".join(exc_info.value.errors)
     assert "defaultNoteConversion.json" in errors_text
     assert "invalid JSON" in errors_text
+
+
+def test_resolve_defaults_dir_frozen_uses_executable_dir(mock_frozen_executable, monkeypatch):
+    """When frozen, _resolve_defaults_dir() returns executable's parent directory."""
+    from gp_midi_remap.config import _resolve_defaults_dir
+    
+    result = _resolve_defaults_dir()
+    
+    # Should be the parent of sys.executable (the executable's directory)
+    assert result == mock_frozen_executable
