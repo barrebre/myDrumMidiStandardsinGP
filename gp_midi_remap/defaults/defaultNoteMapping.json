@@ -1,10 +1,22 @@
 {
     "lines": [
-        {"noteNumbers": [49, 57, 97]},
-        {"noteNumbers": [46, 51, 53]},
-        {"noteNumbers": [38]},
-        {"noteNumbers": [48, 47]},
-        {"noteNumbers": [45, 43]},
-        {"noteNumbers": [36, 35]}
+        {
+            "noteNumbers": [ 49, 55, 57, 97 ]
+        },
+        {
+            "noteNumbers": [ 46, 51, 53 ]
+        },
+        {
+            "noteNumbers": [ 38 ]
+        },
+        {
+            "noteNumbers": [ 48, 47 ]
+        },
+        {
+            "noteNumbers": [ 45, 43 ]
+        },
+        {
+            "noteNumbers": [ 36, 35 ]
+        }
     ]
 }
