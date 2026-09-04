@@ -7,6 +7,14 @@
         {
             "originalNote": 42,
             "replacementNote": 46
+        },
+        {
+            "originalNote": 40,
+            "replacementNote": 43
+        },
+        {
+            "originalNote": 41,
+            "replacementNote": 43
         }
     ]
 }
