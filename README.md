@@ -37,6 +37,22 @@ pip install -e .
 pip install -r requirements.txt
 ```
 
+### Bundling with Frozen Executables
+
+If you build a frozen executable (PyInstaller, cx_Freeze), bundle the three default JSON files with it:
+
+- `defaultNoteConversion.json`
+- `defaultNoteMapping.json`
+- `defaultNoteTypes.json`
+
+Place these files in the same directory as the executable. For PyInstaller, use:
+
+```bash
+pyinstaller --add-data "gp_midi_remap/defaults:." myapp.py
+```
+
+The executable will load defaults from its directory at runtime, allowing users to patch mappings without rebuilding.
+
 ## Usage
 
 ```bash
@@ -53,6 +69,16 @@ Without installing the package, you can also run it as a module:
 ```bash
 python -m gp_midi_remap song.mid
 ```
+
+### Updating Default Mappings
+
+To change the default note-conversion or note-mapping tables without rebuilding the executable:
+
+1. Locate the default files next to the executable (or in `gp_midi_remap/defaults/` for pip installs).
+2. Edit `defaultNoteConversion.json` or `defaultNoteMapping.json` directly.
+3. Run the tool again—it will load the updated defaults automatically.
+
+No rebuild or re-installation needed.
 
 ### JSON override file format
 
