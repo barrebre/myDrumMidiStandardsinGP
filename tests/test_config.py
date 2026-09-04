@@ -1,6 +1,7 @@
 """Tests for gp_midi_remap.config: parsing, validation, merge precedence."""
 
 import json
+import sys
 
 import pytest
 
@@ -12,7 +13,51 @@ def write_json(path, data):
     return path
 
 
-def test_defaults_only_load_empty_tables():
+@pytest.fixture
+def temp_defaults_dir(tmp_path):
+    """Create temporary default JSON files in a temp directory.
+    
+    Returns the directory path. Files are populated with the current defaults.
+    """
+    defaults = {
+        "defaultNoteConversion.json": {"notes": [{"originalNote": 80, "replacementNote": 97}, {"originalNote": 42, "replacementNote": 46}]},
+        "defaultNoteMapping.json": {"lines": [{"noteNumbers": [36, 35]}, {"noteNumbers": [38]}, {"noteNumbers": [45, 43]}, {"noteNumbers": [48, 47]}, {"noteNumbers": [46, 51, 53]}, {"noteNumbers": [49, 57, 97]}]},
+        "defaultNoteTypes.json": {"notes": {"36": "kick", "38": "snare", "42": "closed hi-hat", "46": "open hi-hat", "49": "high crash", "51": "ride", "52": "china", "53": "ride bell", "57": "low crash", "97": "crash pinch"}},
+    }
+    for filename, data in defaults.items():
+        write_json(tmp_path / filename, data)
+    return tmp_path
+
+
+@pytest.fixture
+def mock_frozen_executable(tmp_path, monkeypatch):
+    """Mock sys.frozen to simulate PyInstaller frozen executable.
+    
+    Yields a tuple (mock_sys, defaults_dir) where you can set sys.executable.
+    """
+    defaults = {
+        "defaultNoteConversion.json": {"notes": [{"originalNote": 80, "replacementNote": 97}]},
+        "defaultNoteMapping.json": {"lines": [{"noteNumbers": [36]}]},
+        "defaultNoteTypes.json": {"notes": {"36": "kick"}},
+    }
+    for filename, data in defaults.items():
+        write_json(tmp_path / filename, data)
+    
+    fake_exe = tmp_path / "my_app"
+    fake_exe.write_text("fake executable")
+    
+    monkeypatch.setattr(sys, 'frozen', True)
+    monkeypatch.setattr(sys, 'executable', str(fake_exe))
+    return tmp_path
+
+
+def test_defaults_only_load_empty_tables(temp_defaults_dir, monkeypatch):
+    """Defaults load from external directory, not embedded."""
+    # Mock _resolve_defaults_dir to return our temp directory
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
     tables = load_note_tables()
     assert tables.note_conversion == {80: 97, 42: 46}
     assert 36 in tables.note_mapping
