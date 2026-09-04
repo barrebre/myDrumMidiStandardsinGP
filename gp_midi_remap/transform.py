@@ -58,7 +58,7 @@ class RemapSummary:
         lines.append(
             f"Summary: {self.total_changed()} changed, "
             f"{self.total_unchanged()} unchanged, "
-            f"{self.total_unmatched()} unmatched"
+            f"{self.total_unmatched()} not mapped"
         )
 
         if self.changed:
@@ -67,12 +67,12 @@ class RemapSummary:
                 lines.append(f"  {label(original)} -> {label(final)}: {count}")
 
         if self.unchanged:
-            lines.append("Unchanged (note: count):")
+            lines.append("Unchanged (no conversion needed) (note: count):")
             for (original, final), count in sorted(self.unchanged.items()):
                 lines.append(f"  {label(original)}: {count}")
 
         if self.unmatched:
-            lines.append("Unmatched (no conversion entry) (note: count):")
+            lines.append("Not mapped (add to note mapping to include) (note: count):")
             for original, count in sorted(self.unmatched.items()):
                 lines.append(f"  {label(original)}: {count}")
 
