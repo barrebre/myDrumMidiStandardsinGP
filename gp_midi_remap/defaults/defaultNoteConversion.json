@@ -15,6 +15,10 @@
         {
             "originalNote": 41,
             "replacementNote": 43
+        },
+        {
+            "originalNote": 54,
+            "replacementNote": 55
         }
     ]
 }
