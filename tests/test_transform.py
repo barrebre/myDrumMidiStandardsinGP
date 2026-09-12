@@ -128,8 +128,9 @@ def test_remap_preserves_track_structure_and_non_note_data(tmp_path):
     assert result.tracks[1][1].time == 5
     assert result.tracks[1][2].time == 15
 
-    # note_on + note_off remapped in each of the 2 tracks.
-    assert summary.total_changed() == 4
+    # Count note starts, not the paired note_off events; otherwise each note is
+    # reported twice.
+    assert summary.total_changed() == 2
 
 
 def test_remap_leaves_notes_unchanged_when_no_config(tmp_path):
@@ -143,5 +144,5 @@ def test_remap_leaves_notes_unchanged_when_no_config(tmp_path):
     result = mido.MidiFile(str(output_path))
     notes = [m.note for m in result.tracks[0] if m.type == "note_on"]
     assert notes == [38]
-    # note_on + note_off for track 1's note, plus track 2's note_on + note_off.
-    assert summary.total_unmatched() == 4
+    # Count note starts once per note event, not both note_on and note_off.
+    assert summary.total_unmatched() == 2

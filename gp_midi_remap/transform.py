@@ -58,7 +58,7 @@ class RemapSummary:
         lines.append(
             f"Summary: {self.total_changed()} changed, "
             f"{self.total_unchanged()} unchanged, "
-            f"{self.total_unmatched()} not mapped"
+            f"{self.total_unmatched()} unmatched"
         )
 
         if self.changed:
@@ -104,7 +104,9 @@ def remap_midi_file(input_path: str, output_path: str, tables: NoteTables) -> Re
 
     All non-note events (timing/delta times, channel, velocity, control
     changes, program changes, meta/sysex messages, etc.) are preserved
-    exactly. Each track is processed independently.
+    exactly. Each track is processed independently. Only note starts are
+    counted in the summary so a held note is not reported twice as both a
+    note_on and note_off event.
     """
     midi_file = mido.MidiFile(input_path)
     summary = RemapSummary(note_types=tables.note_types)
@@ -112,8 +114,10 @@ def remap_midi_file(input_path: str, output_path: str, tables: NoteTables) -> Re
     for track in midi_file.tracks:
         for msg in track:
             if msg.type in _NOTE_MESSAGE_TYPES and hasattr(msg, "note"):
-                final_note, status = resolve_note(msg.note, tables)
-                summary.record(msg.note, final_note, status)
+                original_note = msg.note
+                final_note, status = resolve_note(original_note, tables)
+                if msg.type == "note_on" and getattr(msg, "velocity", 0) > 0:
+                    summary.record(original_note, final_note, status)
                 msg.note = final_note
 
     midi_file.save(output_path)
