@@ -404,3 +404,33 @@ def test_load_note_tables_filter_errors_aggregate_with_conversion_errors(
     errors = exc_info.value.errors
     assert any("must be an integer" in e for e in errors)
     assert any("at least one note number" in e for e in errors)
+
+
+def test_load_note_tables_filter_null_json_is_an_error(
+    temp_defaults_dir, tmp_path, monkeypatch
+):
+    """A file containing `null` must not silently disable filtering."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    null_filter = tmp_path / "filter.json"
+    null_filter.write_text("null")
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables(note_filter_path=null_filter)
+    assert any("keepNotes array" in e for e in exc_info.value.errors)
+
+
+def test_load_note_tables_filter_invalid_json_reports_once(
+    temp_defaults_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    bad_filter = tmp_path / "filter.json"
+    bad_filter.write_text("not json")
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables(note_filter_path=bad_filter)
+    assert any("invalid JSON" in e for e in exc_info.value.errors)
+    assert not any("keepNotes array" in e for e in exc_info.value.errors)

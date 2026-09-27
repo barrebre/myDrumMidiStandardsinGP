@@ -28,8 +28,8 @@ class RemapSummary:
     changed: dict[tuple[int, int], int] = field(default_factory=dict)
     unchanged: dict[tuple[int, int], int] = field(default_factory=dict)
     unmatched: dict[int, int] = field(default_factory=dict)
-    dropped: dict[int, int] = field(default_factory=dict)
     note_types: dict[int, str] = field(default_factory=dict)
+    dropped: dict[int, int] = field(default_factory=dict)
 
     def record(self, original: int, final: int, status: str) -> None:
         if status == UNMATCHED:

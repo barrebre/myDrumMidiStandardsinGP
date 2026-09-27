@@ -226,8 +226,12 @@ def load_note_tables(
             mapping.update(_validate_mapping(raw, str(note_mapping_path), errors))
     keep_notes: set[int] | None = None
     if note_filter_path is not None:
+        error_count = len(errors)
         raw = _read_json_file(note_filter_path, errors)
-        if raw is not None:
+        # A successful read of a literal ``null`` also yields None, so compare
+        # the error count rather than ``raw`` to tell parse failure apart from
+        # parsed-null. Filtering must never be silently skipped when requested.
+        if len(errors) == error_count:
             keep_notes = _validate_note_filter(raw, str(note_filter_path), errors)
     if errors:
         raise ConfigError(errors)

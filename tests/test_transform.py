@@ -319,3 +319,33 @@ def test_remap_with_filter_keeps_empty_track_structure(tmp_path):
     assert len(result.tracks) == 2
     assert [m.note for m in result.tracks[0] if m.type == "note_on"] == [36]
     assert [m for m in result.tracks[1] if m.type == "note_on"] == []
+
+
+def test_summary_positional_construction_keeps_note_types_fourth():
+    """note_types must stay the fourth positional field for existing callers."""
+    summary = RemapSummary({}, {}, {}, {38: "snare"})
+    assert summary.note_types == {38: "snare"}
+    assert summary.dropped == {}
+
+
+def test_remap_with_filter_preserves_note_off_timing(tmp_path):
+    # Source absolute ticks: 36 on@0 off@10, 38 on@10 off@20, 36 on@40 off@50.
+    # Dropping the 38 must leave both surviving note_off events in place too.
+    src = write_midi(tmp_path / "in.mid", [(36, 0), (38, 0), (36, 20)])
+    out = tmp_path / "out.mid"
+    tables = NoteTables(note_conversion={}, note_mapping={36: 36}, keep_notes={36})
+
+    remap_midi_file(str(src), str(out), tables)
+
+    absolute = 0
+    events = []
+    for msg in mido.MidiFile(str(out)).tracks[0]:
+        absolute += msg.time
+        if msg.type in ("note_on", "note_off"):
+            events.append((msg.type, absolute))
+    assert events == [
+        ("note_on", 0),
+        ("note_off", 10),
+        ("note_on", 40),
+        ("note_off", 50),
+    ]
