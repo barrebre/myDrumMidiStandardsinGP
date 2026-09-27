@@ -29,6 +29,44 @@ You can also supply your own override files on the command line; entries in
 your file take precedence over the defaults, and any default entries your
 file doesn't mention are still applied.
 
+## Keeping only certain notes
+
+By default every note in the file is written to the output. To keep only
+specific notes and drop the rest, pass a filter file with `--note-filter`:
+
+```json
+{
+  "keepNotes": [35, 36]
+}
+```
+
+```bash
+gp-midi-remap song.mid --note-filter bassDrumOnly.json
+```
+
+This keeps only the bass drum notes (35 and 36) and removes every other note
+from the output. Timing is preserved — the notes that remain stay exactly
+where they were.
+
+Notes are matched against the numbers as they appear in the **input** file,
+before any conversion or mapping is applied. Kept notes still go through the
+normal conversion and mapping tables. Non-note events such as tempo, time
+signature, and track names are never removed, and the file's track structure
+is preserved even if a track ends up with no notes.
+
+`keepNotes` must list at least one note number, each in the MIDI range 0-127.
+There is no built-in default filter — when `--note-filter` is omitted, no
+notes are dropped.
+
+Dropped notes appear in the summary report:
+
+```
+Summary: 0 changed, 2 unchanged, 0 unmatched, 47 dropped
+Dropped (filtered out) (note: count):
+  38 (snare): 24
+  42 (closed hi-hat): 23
+```
+
 ## Install
 
 ```bash
