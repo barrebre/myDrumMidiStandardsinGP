@@ -56,10 +56,10 @@ def test_cli_end_to_end_default_output(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert "song_converted.mid" in out
-    # Both note_on and note_off carry the note number, so each source note
-    # produces two remapped events.
-    assert "38 (snare) -> 40: 2" in out
-    assert "51 (ride): 2" in out
+    # Each source note is counted once, on its note_on, not once per
+    # note_on/note_off event pair.
+    assert "38 (snare) -> 40: 1" in out
+    assert "51 (ride): 1" in out
 
     result_midi = mido.MidiFile(str(output_path))
     notes = [m.note for m in result_midi.tracks[0] if m.type == "note_on"]
