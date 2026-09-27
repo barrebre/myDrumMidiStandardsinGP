@@ -75,6 +75,44 @@ def test_summary_report_includes_note_names():
     assert "38 (snare) -> 40 (tom): 1" in summary.format_report()
 
 
+def test_summary_dropped_defaults_empty():
+    summary = RemapSummary()
+    assert summary.dropped == {}
+    assert summary.total_dropped() == 0
+
+
+def test_summary_record_dropped_counts_per_note():
+    summary = RemapSummary()
+    summary.record_dropped(38)
+    summary.record_dropped(38)
+    summary.record_dropped(42)
+    assert summary.dropped == {38: 2, 42: 1}
+    assert summary.total_dropped() == 3
+
+
+def test_summary_report_omits_dropped_when_none():
+    summary = RemapSummary()
+    summary.record(38, 40, CHANGED)
+    report = summary.format_report()
+    assert "dropped" not in report
+    assert report.splitlines()[0] == (
+        "Summary: 1 changed, 0 unchanged, 0 unmatched"
+    )
+
+
+def test_summary_report_includes_dropped_section():
+    summary = RemapSummary(note_types={38: "snare"})
+    summary.record(36, 36, UNCHANGED)
+    summary.record_dropped(38)
+    summary.record_dropped(38)
+    report = summary.format_report()
+    assert report.splitlines()[0] == (
+        "Summary: 0 changed, 1 unchanged, 0 unmatched, 2 dropped"
+    )
+    assert "Dropped (filtered out) (note: count):" in report
+    assert "  38 (snare): 2" in report
+
+
 def build_multi_track_midi(path):
     midi_file = mido.MidiFile(type=1)
 

@@ -28,6 +28,7 @@ class RemapSummary:
     changed: dict[tuple[int, int], int] = field(default_factory=dict)
     unchanged: dict[tuple[int, int], int] = field(default_factory=dict)
     unmatched: dict[int, int] = field(default_factory=dict)
+    dropped: dict[int, int] = field(default_factory=dict)
     note_types: dict[int, str] = field(default_factory=dict)
 
     def record(self, original: int, final: int, status: str) -> None:
@@ -40,6 +41,9 @@ class RemapSummary:
             key = (original, final)
             self.unchanged[key] = self.unchanged.get(key, 0) + 1
 
+    def record_dropped(self, original: int) -> None:
+        self.dropped[original] = self.dropped.get(original, 0) + 1
+
     def total_changed(self) -> int:
         return sum(self.changed.values())
 
@@ -49,17 +53,23 @@ class RemapSummary:
     def total_unmatched(self) -> int:
         return sum(self.unmatched.values())
 
+    def total_dropped(self) -> int:
+        return sum(self.dropped.values())
+
     def format_report(self) -> str:
         def label(note: int) -> str:
             name = self.note_types.get(note)
             return f"{note} ({name})" if name else str(note)
 
         lines: list[str] = []
-        lines.append(
+        header = (
             f"Summary: {self.total_changed()} changed, "
             f"{self.total_unchanged()} unchanged, "
             f"{self.total_unmatched()} unmatched"
         )
+        if self.dropped:
+            header += f", {self.total_dropped()} dropped"
+        lines.append(header)
 
         if self.changed:
             lines.append("Changed (original -> final: count):")
@@ -74,6 +84,11 @@ class RemapSummary:
         if self.unmatched:
             lines.append("Not mapped (add to note mapping to include) (note: count):")
             for original, count in sorted(self.unmatched.items()):
+                lines.append(f"  {label(original)}: {count}")
+
+        if self.dropped:
+            lines.append("Dropped (filtered out) (note: count):")
+            for original, count in sorted(self.dropped.items()):
                 lines.append(f"  {label(original)}: {count}")
 
         return "\n".join(lines)
