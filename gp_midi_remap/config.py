@@ -48,6 +48,7 @@ class NoteTables:
     note_conversion: dict[int, int] = field(default_factory=dict)
     note_mapping: dict[int, int] = field(default_factory=dict)
     note_types: dict[int, str] = field(default_factory=dict)
+    keep_notes: set[int] | None = None
 
 
 def _load_external_json(path: Path, errors: list[str]) -> object | None:

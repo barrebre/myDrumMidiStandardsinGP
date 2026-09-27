@@ -269,3 +269,17 @@ def test_resolve_defaults_dir_normal_uses_package_dir(monkeypatch):
     assert (result / "defaultNoteConversion.json").exists()
     assert (result / "defaultNoteMapping.json").exists()
     assert (result / "defaultNoteTypes.json").exists()
+
+
+def test_note_tables_keep_notes_defaults_to_none():
+    from gp_midi_remap.config import NoteTables
+
+    tables = NoteTables()
+    assert tables.keep_notes is None
+
+
+def test_note_tables_keep_notes_can_be_set():
+    from gp_midi_remap.config import NoteTables
+
+    tables = NoteTables(keep_notes={35, 36})
+    assert tables.keep_notes == {35, 36}
