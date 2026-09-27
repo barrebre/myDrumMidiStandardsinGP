@@ -269,3 +269,168 @@ def test_resolve_defaults_dir_normal_uses_package_dir(monkeypatch):
     assert (result / "defaultNoteConversion.json").exists()
     assert (result / "defaultNoteMapping.json").exists()
     assert (result / "defaultNoteTypes.json").exists()
+
+
+def test_note_tables_keep_notes_defaults_to_none():
+    from gp_midi_remap.config import NoteTables
+
+    tables = NoteTables()
+    assert tables.keep_notes is None
+
+
+def test_note_tables_keep_notes_can_be_set():
+    from gp_midi_remap.config import NoteTables
+
+    tables = NoteTables(keep_notes={35, 36})
+    assert tables.keep_notes == {35, 36}
+
+
+def test_validate_note_filter_accepts_valid_file():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [35, 36]}, "filter.json", errors)
+    assert result == {35, 36}
+    assert errors == []
+
+
+def test_validate_note_filter_deduplicates():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [36, 36, 35]}, "filter.json", errors)
+    assert result == {35, 36}
+    assert errors == []
+
+
+def test_validate_note_filter_requires_keep_notes_key():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"notes": [35]}, "filter.json", errors)
+    assert result == set()
+    assert any("keepNotes array" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_non_list():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": 35}, "filter.json", errors)
+    assert result == set()
+    assert any("expected an array" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_empty_list():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": []}, "filter.json", errors)
+    assert result == set()
+    assert any("at least one note number" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_non_integer_entry():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [35, "snare"]}, "filter.json", errors)
+    assert result == {35}
+    assert any("not an integer note number" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_boolean_entry():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [True]}, "filter.json", errors)
+    assert result == set()
+    assert any("not an integer note number" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_out_of_range():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [35, 200]}, "filter.json", errors)
+    assert result == {35}
+    assert any("out of MIDI note range" in e for e in errors)
+
+
+def test_load_note_tables_without_filter_leaves_keep_notes_none(
+    temp_defaults_dir, monkeypatch
+):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    tables = load_note_tables()
+    assert tables.keep_notes is None
+
+
+def test_load_note_tables_with_filter(temp_defaults_dir, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    filter_path = write_json(tmp_path / "filter.json", {"keepNotes": [35, 36]})
+    tables = load_note_tables(note_filter_path=filter_path)
+    assert tables.keep_notes == {35, 36}
+
+
+def test_load_note_tables_filter_missing_file_raises(
+    temp_defaults_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables(note_filter_path=tmp_path / "nope.json")
+    assert any("file not found" in e for e in exc_info.value.errors)
+
+
+def test_load_note_tables_filter_errors_aggregate_with_conversion_errors(
+    temp_defaults_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    bad_conv = write_json(tmp_path / "conv.json", {"38": "forty"})
+    bad_filter = write_json(tmp_path / "filter.json", {"keepNotes": []})
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables(note_conversion_path=bad_conv, note_filter_path=bad_filter)
+    errors = exc_info.value.errors
+    assert any("must be an integer" in e for e in errors)
+    assert any("at least one note number" in e for e in errors)
+
+
+def test_load_note_tables_filter_null_json_is_an_error(
+    temp_defaults_dir, tmp_path, monkeypatch
+):
+    """A file containing `null` must not silently disable filtering."""
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    null_filter = tmp_path / "filter.json"
+    null_filter.write_text("null")
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables(note_filter_path=null_filter)
+    assert any("keepNotes array" in e for e in exc_info.value.errors)
+
+
+def test_load_note_tables_filter_invalid_json_reports_once(
+    temp_defaults_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    bad_filter = tmp_path / "filter.json"
+    bad_filter.write_text("not json")
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables(note_filter_path=bad_filter)
+    assert any("invalid JSON" in e for e in exc_info.value.errors)
+    assert not any("keepNotes array" in e for e in exc_info.value.errors)

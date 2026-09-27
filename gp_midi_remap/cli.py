@@ -66,6 +66,18 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--note-filter",
+        type=Path,
+        default=None,
+        help=(
+            "Path to a user JSON file listing the note numbers to keep, in "
+            'the form {"keepNotes": [35, 36]}. Every other note is removed '
+            "from the output. Matched against the note numbers in the input "
+            "file, before conversion and mapping. When omitted, no notes "
+            "are filtered out."
+        ),
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Overwrite the output file if it already exists.",
@@ -97,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
         tables = load_note_tables(
             note_conversion_path=args.note_conversion,
             note_mapping_path=args.note_mapping,
+            note_filter_path=args.note_filter,
         )
     except ConfigError as exc:
         print("Config validation failed:", file=sys.stderr)

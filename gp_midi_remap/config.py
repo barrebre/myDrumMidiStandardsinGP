@@ -48,6 +48,7 @@ class NoteTables:
     note_conversion: dict[int, int] = field(default_factory=dict)
     note_mapping: dict[int, int] = field(default_factory=dict)
     note_types: dict[int, str] = field(default_factory=dict)
+    keep_notes: set[int] | None = None
 
 
 def _load_external_json(path: Path, errors: list[str]) -> object | None:
@@ -162,7 +163,39 @@ def _validate_note_types(data: object, source: str, errors: list[str]) -> dict[i
     return result
 
 
-def load_note_tables(note_conversion_path: Path | None = None, note_mapping_path: Path | None = None) -> NoteTables:
+def _validate_note_filter(data: object, source: str, errors: list[str]) -> set[int]:
+    """Validate a user note-filter file into a set of note numbers to keep.
+
+    Expected shape: ``{"keepNotes": [35, 36]}``. An empty list is rejected
+    because keeping no notes would delete every note in the file.
+    """
+    if not isinstance(data, dict) or "keepNotes" not in data:
+        errors.append(f"{source}: expected an object with a keepNotes array")
+        return set()
+    entries = data["keepNotes"]
+    if not isinstance(entries, list):
+        errors.append(f"{source}.keepNotes: expected an array")
+        return set()
+    if not entries:
+        errors.append(f"{source}.keepNotes: must list at least one note number")
+        return set()
+    result: set[int] = set()
+    for entry in entries:
+        if not isinstance(entry, int) or isinstance(entry, bool):
+            errors.append(f"{source}.keepNotes: entry {entry!r} is not an integer note number")
+            continue
+        if not MIDI_NOTE_MIN <= entry <= MIDI_NOTE_MAX:
+            errors.append(f"{source}.keepNotes: note {entry} is out of MIDI note range (0-127)")
+            continue
+        result.add(entry)
+    return result
+
+
+def load_note_tables(
+    note_conversion_path: Path | None = None,
+    note_mapping_path: Path | None = None,
+    note_filter_path: Path | None = None,
+) -> NoteTables:
     errors: list[str] = []
     # Resolve the directory where default files are located
     defaults_dir = _resolve_defaults_dir()
@@ -191,6 +224,15 @@ def load_note_tables(note_conversion_path: Path | None = None, note_mapping_path
         raw = _read_json_file(note_mapping_path, errors)
         if raw is not None:
             mapping.update(_validate_mapping(raw, str(note_mapping_path), errors))
+    keep_notes: set[int] | None = None
+    if note_filter_path is not None:
+        error_count = len(errors)
+        raw = _read_json_file(note_filter_path, errors)
+        # A successful read of a literal ``null`` also yields None, so compare
+        # the error count rather than ``raw`` to tell parse failure apart from
+        # parsed-null. Filtering must never be silently skipped when requested.
+        if len(errors) == error_count:
+            keep_notes = _validate_note_filter(raw, str(note_filter_path), errors)
     if errors:
         raise ConfigError(errors)
-    return NoteTables(conversion, mapping, note_types)
+    return NoteTables(conversion, mapping, note_types, keep_notes)

@@ -56,10 +56,10 @@ def test_cli_end_to_end_default_output(tmp_path, capsys):
 
     out = capsys.readouterr().out
     assert "song_converted.mid" in out
-    # Both note_on and note_off carry the note number, so each source note
-    # produces two remapped events.
-    assert "38 (snare) -> 40: 2" in out
-    assert "51 (ride): 2" in out
+    # Each source note is counted once, on its note_on, not once per
+    # note_on/note_off event pair.
+    assert "38 (snare) -> 40: 1" in out
+    assert "51 (ride): 1" in out
 
     result_midi = mido.MidiFile(str(output_path))
     notes = [m.note for m in result_midi.tracks[0] if m.type == "note_on"]
@@ -100,4 +100,45 @@ def test_cli_config_error_exit_code(tmp_path):
     bad_conv.write_text("not json")
 
     exit_code = main([str(input_path), "--note-conversion", str(bad_conv)])
+    assert exit_code == 2
+
+
+def test_cli_with_note_filter_keeps_only_listed_notes(tmp_path, capsys):
+    input_path = tmp_path / "song.mid"
+    make_test_midi(input_path, [36, 38, 35, 51])
+
+    note_filter = tmp_path / "filter.json"
+    note_filter.write_text(json.dumps({"keepNotes": [35, 36]}))
+
+    exit_code = main([str(input_path), "--note-filter", str(note_filter)])
+
+    assert exit_code == 0
+    output_path = tmp_path / "song_converted.mid"
+    result_midi = mido.MidiFile(str(output_path))
+    notes = [m.note for m in result_midi.tracks[0] if m.type == "note_on"]
+    assert notes == [36, 35]
+
+    out = capsys.readouterr().out
+    assert "dropped" in out
+    assert "Dropped (filtered out) (note: count):" in out
+
+
+def test_cli_without_note_filter_reports_no_drops(tmp_path, capsys):
+    input_path = tmp_path / "song.mid"
+    make_test_midi(input_path, [36, 38])
+
+    exit_code = main([str(input_path)])
+
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "dropped" not in out
+
+
+def test_cli_invalid_note_filter_exit_code(tmp_path):
+    input_path = tmp_path / "song.mid"
+    make_test_midi(input_path, [36])
+    bad_filter = tmp_path / "filter.json"
+    bad_filter.write_text(json.dumps({"keepNotes": []}))
+
+    exit_code = main([str(input_path), "--note-filter", str(bad_filter)])
     assert exit_code == 2
