@@ -163,6 +163,34 @@ def _validate_note_types(data: object, source: str, errors: list[str]) -> dict[i
     return result
 
 
+def _validate_note_filter(data: object, source: str, errors: list[str]) -> set[int]:
+    """Validate a user note-filter file into a set of note numbers to keep.
+
+    Expected shape: ``{"keepNotes": [35, 36]}``. An empty list is rejected
+    because keeping no notes would delete every note in the file.
+    """
+    if not isinstance(data, dict) or "keepNotes" not in data:
+        errors.append(f"{source}: expected an object with a keepNotes array")
+        return set()
+    entries = data["keepNotes"]
+    if not isinstance(entries, list):
+        errors.append(f"{source}.keepNotes: expected an array")
+        return set()
+    if not entries:
+        errors.append(f"{source}.keepNotes: must list at least one note number")
+        return set()
+    result: set[int] = set()
+    for entry in entries:
+        if not isinstance(entry, int) or isinstance(entry, bool):
+            errors.append(f"{source}.keepNotes: entry {entry!r} is not an integer note number")
+            continue
+        if not MIDI_NOTE_MIN <= entry <= MIDI_NOTE_MAX:
+            errors.append(f"{source}.keepNotes: note {entry} is out of MIDI note range (0-127)")
+            continue
+        result.add(entry)
+    return result
+
+
 def load_note_tables(note_conversion_path: Path | None = None, note_mapping_path: Path | None = None) -> NoteTables:
     errors: list[str] = []
     # Resolve the directory where default files are located

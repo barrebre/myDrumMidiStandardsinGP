@@ -283,3 +283,75 @@ def test_note_tables_keep_notes_can_be_set():
 
     tables = NoteTables(keep_notes={35, 36})
     assert tables.keep_notes == {35, 36}
+
+
+def test_validate_note_filter_accepts_valid_file():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [35, 36]}, "filter.json", errors)
+    assert result == {35, 36}
+    assert errors == []
+
+
+def test_validate_note_filter_deduplicates():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [36, 36, 35]}, "filter.json", errors)
+    assert result == {35, 36}
+    assert errors == []
+
+
+def test_validate_note_filter_requires_keep_notes_key():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"notes": [35]}, "filter.json", errors)
+    assert result == set()
+    assert any("keepNotes array" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_non_list():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": 35}, "filter.json", errors)
+    assert result == set()
+    assert any("expected an array" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_empty_list():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": []}, "filter.json", errors)
+    assert result == set()
+    assert any("at least one note number" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_non_integer_entry():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [35, "snare"]}, "filter.json", errors)
+    assert result == {35}
+    assert any("not an integer note number" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_boolean_entry():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [True]}, "filter.json", errors)
+    assert result == set()
+    assert any("not an integer note number" in e for e in errors)
+
+
+def test_validate_note_filter_rejects_out_of_range():
+    from gp_midi_remap.config import _validate_note_filter
+
+    errors = []
+    result = _validate_note_filter({"keepNotes": [35, 200]}, "filter.json", errors)
+    assert result == {35}
+    assert any("out of MIDI note range" in e for e in errors)
