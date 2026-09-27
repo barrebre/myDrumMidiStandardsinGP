@@ -191,7 +191,11 @@ def _validate_note_filter(data: object, source: str, errors: list[str]) -> set[i
     return result
 
 
-def load_note_tables(note_conversion_path: Path | None = None, note_mapping_path: Path | None = None) -> NoteTables:
+def load_note_tables(
+    note_conversion_path: Path | None = None,
+    note_mapping_path: Path | None = None,
+    note_filter_path: Path | None = None,
+) -> NoteTables:
     errors: list[str] = []
     # Resolve the directory where default files are located
     defaults_dir = _resolve_defaults_dir()
@@ -220,6 +224,11 @@ def load_note_tables(note_conversion_path: Path | None = None, note_mapping_path
         raw = _read_json_file(note_mapping_path, errors)
         if raw is not None:
             mapping.update(_validate_mapping(raw, str(note_mapping_path), errors))
+    keep_notes: set[int] | None = None
+    if note_filter_path is not None:
+        raw = _read_json_file(note_filter_path, errors)
+        if raw is not None:
+            keep_notes = _validate_note_filter(raw, str(note_filter_path), errors)
     if errors:
         raise ConfigError(errors)
-    return NoteTables(conversion, mapping, note_types)
+    return NoteTables(conversion, mapping, note_types, keep_notes)

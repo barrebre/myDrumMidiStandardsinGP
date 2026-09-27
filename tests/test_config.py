@@ -355,3 +355,52 @@ def test_validate_note_filter_rejects_out_of_range():
     result = _validate_note_filter({"keepNotes": [35, 200]}, "filter.json", errors)
     assert result == {35}
     assert any("out of MIDI note range" in e for e in errors)
+
+
+def test_load_note_tables_without_filter_leaves_keep_notes_none(
+    temp_defaults_dir, monkeypatch
+):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    tables = load_note_tables()
+    assert tables.keep_notes is None
+
+
+def test_load_note_tables_with_filter(temp_defaults_dir, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    filter_path = write_json(tmp_path / "filter.json", {"keepNotes": [35, 36]})
+    tables = load_note_tables(note_filter_path=filter_path)
+    assert tables.keep_notes == {35, 36}
+
+
+def test_load_note_tables_filter_missing_file_raises(
+    temp_defaults_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables(note_filter_path=tmp_path / "nope.json")
+    assert any("file not found" in e for e in exc_info.value.errors)
+
+
+def test_load_note_tables_filter_errors_aggregate_with_conversion_errors(
+    temp_defaults_dir, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        "gp_midi_remap.config._resolve_defaults_dir",
+        lambda: temp_defaults_dir,
+    )
+    bad_conv = write_json(tmp_path / "conv.json", {"38": "forty"})
+    bad_filter = write_json(tmp_path / "filter.json", {"keepNotes": []})
+    with pytest.raises(ConfigError) as exc_info:
+        load_note_tables(note_conversion_path=bad_conv, note_filter_path=bad_filter)
+    errors = exc_info.value.errors
+    assert any("must be an integer" in e for e in errors)
+    assert any("at least one note number" in e for e in errors)
