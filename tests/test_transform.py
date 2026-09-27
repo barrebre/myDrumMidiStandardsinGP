@@ -184,3 +184,138 @@ def test_remap_leaves_notes_unchanged_when_no_config(tmp_path):
     assert notes == [38]
     # Count note starts once per note event, not both note_on and note_off.
     assert summary.total_unmatched() == 2
+
+
+def write_midi(path, events):
+    """Build a one-track MIDI file from (note, delta_ticks) pairs.
+
+    Each pair produces a note_on at the given delta and a note_off 10 ticks later.
+    """
+    midi_file = mido.MidiFile()
+    track = mido.MidiTrack()
+    midi_file.tracks.append(track)
+    for note, delta in events:
+        track.append(mido.Message("note_on", note=note, velocity=64, time=delta))
+        track.append(mido.Message("note_off", note=note, velocity=0, time=10))
+    midi_file.save(str(path))
+    return path
+
+
+def test_remap_without_filter_keeps_all_notes(tmp_path):
+    src = write_midi(tmp_path / "in.mid", [(36, 0), (38, 0), (42, 0)])
+    out = tmp_path / "out.mid"
+    tables = NoteTables(note_conversion={}, note_mapping={36: 36, 38: 38, 42: 42})
+
+    summary = remap_midi_file(str(src), str(out), tables)
+
+    notes = [m.note for m in mido.MidiFile(str(out)).tracks[0] if m.type == "note_on"]
+    assert notes == [36, 38, 42]
+    assert summary.total_dropped() == 0
+
+
+def test_remap_with_filter_drops_unlisted_notes(tmp_path):
+    src = write_midi(tmp_path / "in.mid", [(36, 0), (38, 0), (35, 0), (42, 0)])
+    out = tmp_path / "out.mid"
+    tables = NoteTables(
+        note_conversion={}, note_mapping={36: 36, 35: 35}, keep_notes={35, 36}
+    )
+
+    summary = remap_midi_file(str(src), str(out), tables)
+
+    result = mido.MidiFile(str(out)).tracks[0]
+    notes = [m.note for m in result if m.type in ("note_on", "note_off")]
+    assert notes == [36, 36, 35, 35]
+    assert summary.dropped == {38: 1, 42: 1}
+
+
+def test_remap_with_filter_preserves_timing_of_survivors(tmp_path):
+    # Absolute note_on ticks: 36 at 0, 38 at 10 (0 + note_off 10),
+    # 36 at 40 (10 + off 10 + 20). Dropping the 38 must leave the second
+    # 36 at absolute tick 40.
+    src = write_midi(tmp_path / "in.mid", [(36, 0), (38, 0), (36, 20)])
+    out = tmp_path / "out.mid"
+    tables = NoteTables(note_conversion={}, note_mapping={36: 36}, keep_notes={36})
+
+    remap_midi_file(str(src), str(out), tables)
+
+    absolute = 0
+    on_ticks = []
+    for msg in mido.MidiFile(str(out)).tracks[0]:
+        absolute += msg.time
+        if msg.type == "note_on":
+            on_ticks.append(absolute)
+    assert on_ticks == [0, 40]
+
+
+def test_remap_with_filter_preserves_non_note_events(tmp_path):
+    midi_file = mido.MidiFile()
+    track = mido.MidiTrack()
+    midi_file.tracks.append(track)
+    track.append(mido.MetaMessage("track_name", name="Drums", time=0))
+    track.append(mido.MetaMessage("set_tempo", tempo=500000, time=0))
+    track.append(mido.Message("program_change", program=1, time=0))
+    track.append(mido.Message("note_on", note=38, velocity=64, time=0))
+    track.append(mido.Message("note_off", note=38, velocity=0, time=10))
+    track.append(mido.Message("note_on", note=36, velocity=64, time=0))
+    track.append(mido.Message("note_off", note=36, velocity=0, time=10))
+    src = tmp_path / "in.mid"
+    midi_file.save(str(src))
+    out = tmp_path / "out.mid"
+    tables = NoteTables(note_conversion={}, note_mapping={36: 36}, keep_notes={36})
+
+    remap_midi_file(str(src), str(out), tables)
+
+    types = [m.type for m in mido.MidiFile(str(out)).tracks[0]]
+    assert "track_name" in types
+    assert "set_tempo" in types
+    assert "program_change" in types
+    assert types.count("note_on") == 1
+
+
+def test_remap_with_filter_applies_mapping_to_kept_notes(tmp_path):
+    src = write_midi(tmp_path / "in.mid", [(50, 0), (38, 0)])
+    out = tmp_path / "out.mid"
+    tables = NoteTables(
+        note_conversion={50: 97}, note_mapping={97: 97}, keep_notes={50}
+    )
+
+    summary = remap_midi_file(str(src), str(out), tables)
+
+    notes = [m.note for m in mido.MidiFile(str(out)).tracks[0] if m.type == "note_on"]
+    assert notes == [97]
+    assert summary.total_changed() == 1
+    assert summary.dropped == {38: 1}
+
+
+def test_remap_with_filter_counts_each_note_once_not_per_event(tmp_path):
+    src = write_midi(tmp_path / "in.mid", [(38, 0), (38, 0)])
+    out = tmp_path / "out.mid"
+    tables = NoteTables(note_conversion={}, note_mapping={36: 36}, keep_notes={36})
+
+    summary = remap_midi_file(str(src), str(out), tables)
+
+    # Two note_on events dropped, their note_off events dropped silently.
+    assert summary.dropped == {38: 2}
+
+
+def test_remap_with_filter_keeps_empty_track_structure(tmp_path):
+    midi_file = mido.MidiFile()
+    first = mido.MidiTrack()
+    first.append(mido.Message("note_on", note=36, velocity=64, time=0))
+    first.append(mido.Message("note_off", note=36, velocity=0, time=10))
+    second = mido.MidiTrack()
+    second.append(mido.Message("note_on", note=38, velocity=64, time=0))
+    second.append(mido.Message("note_off", note=38, velocity=0, time=10))
+    midi_file.tracks.append(first)
+    midi_file.tracks.append(second)
+    src = tmp_path / "in.mid"
+    midi_file.save(str(src))
+    out = tmp_path / "out.mid"
+    tables = NoteTables(note_conversion={}, note_mapping={36: 36}, keep_notes={36})
+
+    remap_midi_file(str(src), str(out), tables)
+
+    result = mido.MidiFile(str(out))
+    assert len(result.tracks) == 2
+    assert [m.note for m in result.tracks[0] if m.type == "note_on"] == [36]
+    assert [m for m in result.tracks[1] if m.type == "note_on"] == []

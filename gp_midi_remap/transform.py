@@ -122,18 +122,37 @@ def remap_midi_file(input_path: str, output_path: str, tables: NoteTables) -> Re
     exactly. Each track is processed independently. Only note starts are
     counted in the summary so a held note is not reported twice as both a
     note_on and note_off event.
+
+    When ``tables.keep_notes`` is set, note messages whose original note
+    number is not listed are removed. A removed message's delta time is
+    carried forward onto the next surviving message so every remaining
+    event stays at its original absolute position.
     """
     midi_file = mido.MidiFile(input_path)
     summary = RemapSummary(note_types=tables.note_types)
+    keep_notes = tables.keep_notes
 
     for track in midi_file.tracks:
+        kept = []
+        carried_time = 0
         for msg in track:
-            if msg.type in _NOTE_MESSAGE_TYPES and hasattr(msg, "note"):
+            is_note = msg.type in _NOTE_MESSAGE_TYPES and hasattr(msg, "note")
+            if is_note and keep_notes is not None and msg.note not in keep_notes:
+                if msg.type == "note_on" and getattr(msg, "velocity", 0) > 0:
+                    summary.record_dropped(msg.note)
+                carried_time += msg.time
+                continue
+            if carried_time:
+                msg.time += carried_time
+                carried_time = 0
+            if is_note:
                 original_note = msg.note
                 final_note, status = resolve_note(original_note, tables)
                 if msg.type == "note_on" and getattr(msg, "velocity", 0) > 0:
                     summary.record(original_note, final_note, status)
                 msg.note = final_note
+            kept.append(msg)
+        track[:] = kept
 
     midi_file.save(output_path)
     return summary
